@@ -70,14 +70,36 @@ jobs:
           sudo apt-get install -y ninja-build pkg-config libgl1-mesa-dev
           python -m pip install "conan==2.28.0"
 
-      - name: Build VOIDEX Android arm64 (unsigned)
+      # A temporary throwaway signing key is generated per build for smoke tests.
+      # For a distributable app, configure a persistent release key through
+      # GitHub Secrets and a secure signing process. Never commit that key.
+      - name: Create temporary test signing certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          PASS="$(openssl rand -hex 20)"
+          echo "::add-mask::$PASS"
+          KEYSTORE_PATH="$RUNNER_TEMP/voidex-ci-test.p12"
+          keytool -genkeypair -noprompt \
+            -alias voidex-ci \
+            -keyalg RSA -keysize 3072 -validity 30 \
+            -storetype PKCS12 -keystore "$KEYSTORE_PATH" \
+            -storepass "$PASS" -keypass "$PASS" \
+            -dname "CN=VOIDEX temporary build, OU=Testing, O=VOIDEX, C=TR"
+          {
+            echo "QT_ANDROID_KEYSTORE_PATH=$KEYSTORE_PATH"
+            echo "QT_ANDROID_KEYSTORE_ALIAS=voidex-ci"
+            echo "QT_ANDROID_KEYSTORE_STORE_PASS=$PASS"
+          } >> "$GITHUB_ENV"
+
+      - name: Build VOIDEX Android arm64 (temporarily signed for testing)
         shell: bash
         env:
           QT_INSTALL_DIR: ${{ runner.temp }}
         run: |
           export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/$NDK_VERSION"
           export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
-          deploy/build.sh -t android --abi arm64-v8a --build ./deploy/build/voidex-arm64
+          deploy/build.sh -t android --abi arm64-v8a --sign --build ./deploy/build/voidex-arm64
 
       - name: Find APK build output
         if: success()
@@ -87,6 +109,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: VOIDEX-android-arm64-UNTESTED
+          name: VOIDEX-android-arm64-TEMP-SIGNED-UNTESTED
           path: deploy/build/voidex-arm64/**/*.apk
           if-no-files-found: error
