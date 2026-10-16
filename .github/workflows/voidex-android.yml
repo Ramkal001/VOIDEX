@@ -1,0 +1,92 @@
+# Experimental self-contained Android build for the user's fork.
+# Native dependencies may require iteration before a usable APK is produced.
+name: VOIDEX Android ARM64 (experimental)
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'client/**'
+      - '.github/workflows/voidex-android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-arm64:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    env:
+      QT_VERSION: '6.10.3'
+      NDK_VERSION: '27.0.11718014'
+      APP_ANDROID_MIN_SDK: '30'
+      QT_MODULES: 'qtremoteobjects qt5compat qtimageformats qtshadertools'
+    steps:
+      - name: Get source and submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      - name: Install Qt desktop tools
+        uses: jurplel/install-qt-action@v4.3.1
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: linux
+          target: desktop
+          arch: linux_gcc_64
+          modules: ${{ env.QT_MODULES }}
+          dir: ${{ runner.temp }}
+
+      - name: Install Qt Android arm64
+        uses: jurplel/install-qt-action@v4.3.1
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: all_os
+          target: android
+          arch: android_arm64_v8a
+          modules: ${{ env.QT_MODULES }}
+          dir: ${{ runner.temp }}
+
+      - name: Android SDK and NDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platforms;android-36 ndk;27.0.11718014'
+
+      - name: CMake/Conan build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build pkg-config libgl1-mesa-dev
+          python -m pip install "conan==2.28.0"
+
+      - name: Build VOIDEX Android arm64 (unsigned)
+        shell: bash
+        env:
+          QT_INSTALL_DIR: ${{ runner.temp }}
+        run: |
+          export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/$NDK_VERSION"
+          export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
+          deploy/build.sh -t android --abi arm64-v8a --build ./deploy/build/voidex-arm64
+
+      - name: Find APK build output
+        if: success()
+        run: find deploy/build/voidex-arm64 -type f -name '*.apk' -print
+
+      - name: Upload build output for inspection (not yet a release)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VOIDEX-android-arm64-UNTESTED
+          path: deploy/build/voidex-arm64/**/*.apk
+          if-no-files-found: error
