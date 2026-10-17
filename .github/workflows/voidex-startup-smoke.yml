@@ -1,0 +1,119 @@
+# Diagnostic-only workflow. Runs VOIDEX on a clean Android emulator and records
+# startup failures. x86_64 emulator behaviour is not proof of ARM64/phone support.
+name: VOIDEX startup smoke test (emulator)
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'client/**'
+      - '.github/workflows/voidex-startup-smoke.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  emulator-startup:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 100
+    env:
+      QT_VERSION: '6.10.3'
+      NDK_VERSION: '27.0.11718014'
+      APP_ANDROID_MIN_SDK: '30'
+      QT_MODULES: 'qtremoteobjects qt5compat qtimageformats qtshadertools'
+      TEST_APK: deploy/build/voidex-x86_64/client/android-build/build/outputs/apk/android-build-release-signed.apk
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - name: Install host Qt
+        uses: jurplel/install-qt-action@v4.3.1
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: linux
+          target: desktop
+          arch: linux_gcc_64
+          modules: ${{ env.QT_MODULES }}
+          dir: ${{ runner.temp }}
+      - name: Install x86_64 Android Qt
+        uses: jurplel/install-qt-action@v4.3.1
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: all_os
+          target: android
+          arch: android_x86_64
+          modules: ${{ env.QT_MODULES }}
+          dir: ${{ runner.temp }}
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platforms;android-36 ndk;27.0.11718014'
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build pkg-config libgl1-mesa-dev
+          python -m pip install "conan==2.28.0"
+      - name: Generate temporary test-only signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          PASS="$(openssl rand -hex 20)"
+          echo "::add-mask::$PASS"
+          keytool -genkeypair -noprompt -alias voidex-ci -keyalg RSA -keysize 3072 -validity 3 -storetype PKCS12 -keystore "$RUNNER_TEMP/voidex-emulator-ci.p12" -storepass "$PASS" -keypass "$PASS" -dname "CN=VOIDEX temporary emulator test"
+          {
+            echo "QT_ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/voidex-emulator-ci.p12"
+            echo "QT_ANDROID_KEYSTORE_ALIAS=voidex-ci"
+            echo "QT_ANDROID_KEYSTORE_STORE_PASS=$PASS"
+          } >> "$GITHUB_ENV"
+      - name: Build diagnostic x86_64 APK
+        env:
+          QT_INSTALL_DIR: ${{ runner.temp }}
+        run: |
+          export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/$NDK_VERSION"
+          export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
+          deploy/build.sh -t android --abi x86_64 --sign --build ./deploy/build/voidex-x86_64
+          test -s "$TEST_APK"
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Boot Android emulator and check actual app process
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -gpu swiftshader_indirect
+          script: |
+            set -u
+            mkdir -p voidex-test-results
+            adb install "$TEST_APK" > voidex-test-results/install.txt 2>&1
+            if [ "$?" -ne 0 ]; then cat voidex-test-results/install.txt; exit 1; fi
+            adb logcat -c
+            adb shell am start -W -n net.voidex.private/org.amnezia.vpn.AmneziaActivity > voidex-test-results/launch.txt 2>&1
+            sleep 25
+            adb shell pidof net.voidex.private > voidex-test-results/pid.txt 2>&1
+            status=$?
+            adb logcat -d -b crash -v threadtime > voidex-test-results/crash.txt 2>&1 || true
+            adb logcat -d -b main -v threadtime | grep -Ei 'AndroidRuntime|FATAL EXCEPTION|Qt|QML|amnezia|voidex|linker|libc.*Fatal|UnsatisfiedLinkError' > voidex-test-results/startup-filtered.txt || true
+            echo '=== LAUNCH ==='
+            cat voidex-test-results/launch.txt
+            echo '=== CRASH ==='
+            tail -n 120 voidex-test-results/crash.txt
+            echo '=== STARTUP FILTERED ==='
+            tail -n 180 voidex-test-results/startup-filtered.txt
+            if [ "$status" -ne 0 ]; then echo 'FAIL: VOIDEX process exited within 25 seconds'; exit 1; fi
+            echo 'PASS: VOIDEX process alive after 25 seconds (emulator only)'
+      - name: Save startup diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VOIDEX-emulator-startup-diagnostics
+          path: voidex-test-results/
+          if-no-files-found: warn
