@@ -77,7 +77,7 @@ ColumnLayout {
 
         largeText: true
         maximumLineCount: 2
-        text: qsTr("Private secure connection")
+        text: ServersUiController.defaultServerDescriptionCollapsed
         leftImageSource: ServersUiController.defaultServerImagePathCollapsed
         leftImageColor: AmneziaStyle.color.transparent
         leftImageWidth: 20
