@@ -101,14 +101,23 @@ jobs:
           export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
           deploy/build.sh -t android --abi arm64-v8a --sign --build ./deploy/build/voidex-arm64
 
-      - name: Find APK build output
-        if: success()
-        run: find deploy/build/voidex-arm64 -type f -name '*.apk' -print
+      - name: Verify APK signature and package integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="deploy/build/voidex-arm64/client/android-build/build/outputs/apk/android-build-release-signed.apk"
+          test -s "$APK"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n1)"
+          test -n "$APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          unzip -t "$APK" >/dev/null
+          ls -lh "$APK"
 
-      - name: Upload build output for inspection (not yet a release)
-        if: success()
+      # Publish ONLY the verified, signed ARM64 APK. Other Gradle variants may
+      # be unsigned and must not be handed out for direct installation.
+      - name: Upload installable test APK (not a production release)
         uses: actions/upload-artifact@v4
         with:
-          name: VOIDEX-android-arm64-TEMP-SIGNED-UNTESTED
-          path: deploy/build/voidex-arm64/**/*.apk
+          name: VOIDEX-arm64-SIGNED-TEST-APK
+          path: deploy/build/voidex-arm64/client/android-build/build/outputs/apk/android-build-release-signed.apk
           if-no-files-found: error
