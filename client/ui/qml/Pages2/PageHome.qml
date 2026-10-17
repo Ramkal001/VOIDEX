@@ -18,23 +18,6 @@ import "../Components"
 PageType {
     id: root
 
-    // Original illustrated background: the functional VPN UI is drawn on top.
-    Image {
-        anchors.fill: parent
-        source: "qrc:/images/voidex-space.svg"
-        fillMode: Image.PreserveAspectCrop
-        opacity: 0.78
-    }
-    Rectangle {
-        anchors.fill: parent
-        opacity: 0.30
-        gradient: Gradient {
-            GradientStop { position: 0; color: "#010812" }
-            GradientStop { position: 0.5; color: "#051329" }
-            GradientStop { position: 1; color: "#030B19" }
-        }
-    }
-
     property var containersDropDownRef: null
 
     property var apiAvailableProtocols: []
@@ -133,83 +116,6 @@ PageType {
             anchors.bottomMargin: 12
 
             spacing: 0
-
-            Text {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 40
-                text: "V O I D E X"
-                color: "#F6FAFF"
-                font.pixelSize: 25
-                font.weight: Font.DemiBold
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-            }
-            Text {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 19
-                text: qsTr("PRIVATE CONNECTION")
-                color: "#BFD3EA"
-                font.pixelSize: 10
-                font.letterSpacing: 2.1
-                horizontalAlignment: Text.AlignHCenter
-            }
-
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.leftMargin: 16
-                Layout.rightMargin: 16
-                Layout.topMargin: 13
-                spacing: 9
-
-                Rectangle {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 54
-                    radius: 13
-                    color: "#BA0B2543"
-                    border.width: 1
-                    border.color: "#7190B0"
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: 12
-                        anchors.rightMargin: 9
-                        spacing: 8
-                        Image {
-                            id: voidexFlag
-                            Layout.preferredWidth: 26
-                            Layout.preferredHeight: 20
-                            fillMode: Image.PreserveAspectFit
-                            source: ServersUiController.defaultServerImagePathCollapsed
-                            visible: source !== ""
-                        }
-                        Text {
-                            visible: !voidexFlag.visible
-                            text: "🌐"
-                            font.pixelSize: 19
-                        }
-                        Text {
-                            Layout.fillWidth: true
-                            text: ServersUiController.defaultServerName
-                            color: "#F4F9FF"
-                            font.pixelSize: 15
-                            font.weight: Font.Medium
-                            elide: Text.ElideRight
-                        }
-                        Text { text: "⌄"; font.pixelSize: 22; color: "#E6F3FF" }
-                    }
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: drawer.open()
-                        Accessible.name: qsTr("Choose server")
-                    }
-                }
-
-                ButtonType {
-                    Layout.preferredWidth: 114
-                    Layout.preferredHeight: 54
-                    text: qsTr("+ Add Server")
-                    onClicked: PageController.goToPage(PageEnum.PageSetupWizardConfigSource)
-                }
-            }
 
             HomeInfoButton {
                 id: loggingButton
@@ -382,7 +288,7 @@ PageType {
             expanded: false
             pressed: collapsedBarMouseArea.pressed
             outdatedWarningVisible: root.isOutdatedAwgWarningVisible
-            protocolSelectionVisible: false
+            protocolSelectionVisible: root.isApiProtocolSelectionVisible
             protocolSelectable: root.apiAvailableProtocols.length > 1
             protocolText: root.protocolDisplayName(root.apiAvailableProtocols.length > 1 ? root.apiCurrentProtocol : root.apiAvailableProtocols[0])
 
@@ -413,7 +319,7 @@ PageType {
                 anchors.right: parent.right
 
                 expanded: true
-                protocolSelectionVisible: false
+                protocolSelectionVisible: root.isApiProtocolSelectionVisible
                 protocolSelectable: root.apiAvailableProtocols.length > 1
                 protocolText: root.protocolDisplayName(root.apiAvailableProtocols.length > 1 ? root.apiCurrentProtocol : root.apiAvailableProtocols[0])
 
@@ -439,7 +345,7 @@ PageType {
                     Layout.maximumWidth: parent.width - 32
                     Layout.topMargin: 16
 
-                    visible: false // Technical transport details remain in advanced settings
+                    visible: !ServersUiController.isDefaultServerFromApi
 
                     text: ServersUiController.defaultServerDefaultContainerName
                     rightImageSource: "qrc:/images/controls/chevron-down.svg"
