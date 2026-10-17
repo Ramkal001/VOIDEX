@@ -2,8 +2,8 @@
 # startup failures. x86_64 emulator behaviour is not proof of ARM64/phone support.
 name: VOIDEX startup smoke test (emulator)
 on:
-  pull_request:
-    branches: [dev]
+  push:
+    branches: [feature/voidex-cosmic-ui]
     paths:
       - 'client/**'
       - '.github/workflows/voidex-startup-smoke.yml'
