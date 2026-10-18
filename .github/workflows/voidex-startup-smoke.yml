@@ -98,8 +98,8 @@ jobs:
             adb logcat -c
             adb shell am start -W -n net.voidex.private/org.amnezia.vpn.AmneziaActivity > voidex-test-results/launch.txt 2>&1
             sleep 25
-            adb shell pidof net.voidex.private > voidex-test-results/pid.txt 2>&1
-            status=$?
+            status=0
+            adb shell pidof net.voidex.private > voidex-test-results/pid.txt 2>&1 || status=$?
             adb logcat -d -b crash -v threadtime > voidex-test-results/crash.txt 2>&1 || true
             adb logcat -d -b main -v threadtime | grep -Ei 'AndroidRuntime|FATAL EXCEPTION|Qt|QML|amnezia|voidex|linker|libc.*Fatal|UnsatisfiedLinkError' > voidex-test-results/startup-filtered.txt || true
             echo '=== LAUNCH ==='
