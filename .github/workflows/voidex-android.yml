@@ -1,0 +1,123 @@
+# Experimental self-contained Android build for the user's fork.
+# Native dependencies may require iteration before a usable APK is produced.
+name: VOIDEX Android ARM64 (experimental)
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'client/**'
+      - '.github/workflows/voidex-android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-arm64:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    env:
+      QT_VERSION: '6.10.3'
+      NDK_VERSION: '27.0.11718014'
+      APP_ANDROID_MIN_SDK: '30'
+      QT_MODULES: 'qtremoteobjects qt5compat qtimageformats qtshadertools'
+    steps:
+      - name: Get source and submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      - name: Install Qt desktop tools
+        uses: jurplel/install-qt-action@v4.3.1
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: linux
+          target: desktop
+          arch: linux_gcc_64
+          modules: ${{ env.QT_MODULES }}
+          dir: ${{ runner.temp }}
+
+      - name: Install Qt Android arm64
+        uses: jurplel/install-qt-action@v4.3.1
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: all_os
+          target: android
+          arch: android_arm64_v8a
+          modules: ${{ env.QT_MODULES }}
+          dir: ${{ runner.temp }}
+
+      - name: Android SDK and NDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platforms;android-36 ndk;27.0.11718014'
+
+      - name: CMake/Conan build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build pkg-config libgl1-mesa-dev
+          python -m pip install "conan==2.28.0"
+
+      # A temporary throwaway signing key is generated per build for smoke tests.
+      # For a distributable app, configure a persistent release key through
+      # GitHub Secrets and a secure signing process. Never commit that key.
+      - name: Create temporary test signing certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          PASS="$(openssl rand -hex 20)"
+          echo "::add-mask::$PASS"
+          KEYSTORE_PATH="$RUNNER_TEMP/voidex-ci-test.p12"
+          keytool -genkeypair -noprompt \
+            -alias voidex-ci \
+            -keyalg RSA -keysize 3072 -validity 30 \
+            -storetype PKCS12 -keystore "$KEYSTORE_PATH" \
+            -storepass "$PASS" -keypass "$PASS" \
+            -dname "CN=VOIDEX temporary build, OU=Testing, O=VOIDEX, C=TR"
+          {
+            echo "QT_ANDROID_KEYSTORE_PATH=$KEYSTORE_PATH"
+            echo "QT_ANDROID_KEYSTORE_ALIAS=voidex-ci"
+            echo "QT_ANDROID_KEYSTORE_STORE_PASS=$PASS"
+          } >> "$GITHUB_ENV"
+
+      - name: Build VOIDEX Android arm64 (temporarily signed for testing)
+        shell: bash
+        env:
+          QT_INSTALL_DIR: ${{ runner.temp }}
+        run: |
+          export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/$NDK_VERSION"
+          export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
+          deploy/build.sh -t android --abi arm64-v8a --sign --build ./deploy/build/voidex-arm64
+
+      - name: Verify APK signature and package integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="deploy/build/voidex-arm64/client/android-build/build/outputs/apk/android-build-release-signed.apk"
+          test -s "$APK"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n1)"
+          test -n "$APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          unzip -t "$APK" >/dev/null
+          ls -lh "$APK"
+
+      # Publish ONLY the verified, signed ARM64 APK. Other Gradle variants may
+      # be unsigned and must not be handed out for direct installation.
+      - name: Upload installable test APK (not a production release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: VOIDEX-arm64-SIGNED-TEST-APK
+          path: deploy/build/voidex-arm64/client/android-build/build/outputs/apk/android-build-release-signed.apk
+          if-no-files-found: error
