@@ -98,8 +98,7 @@ jobs:
             adb logcat -c
             adb shell am start -W -n net.voidex.private/org.amnezia.vpn.AmneziaActivity > voidex-test-results/launch.txt 2>&1
             sleep 25
-            status=0
-            adb shell pidof net.voidex.private > voidex-test-results/pid.txt 2>&1 || status=$?
+            adb shell pidof net.voidex.private > voidex-test-results/pid.txt 2>&1 || true
             adb logcat -d -b crash -v threadtime > voidex-test-results/crash.txt 2>&1 || true
             adb logcat -d -b main -v threadtime | grep -Ei 'AndroidRuntime|FATAL EXCEPTION|Qt|QML|amnezia|voidex|linker|libc.*Fatal|UnsatisfiedLinkError' > voidex-test-results/startup-filtered.txt || true
             echo '=== LAUNCH ==='
@@ -108,7 +107,16 @@ jobs:
             tail -n 120 voidex-test-results/crash.txt
             echo '=== STARTUP FILTERED ==='
             tail -n 180 voidex-test-results/startup-filtered.txt
-            if [ "$status" -ne 0 ]; then echo 'FAIL: VOIDEX process exited within 25 seconds'; exit 1; fi
+            if ! grep -Eq '^[0-9]+([[:space:]]+[0-9]+)*
+            echo 'PASS: VOIDEX process alive after 25 seconds (emulator only)'
+      - name: Save startup diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VOIDEX-emulator-startup-diagnostics
+          path: voidex-test-results/
+          if-no-files-found: warn
+ voidex-test-results/pid.txt; then echo 'FAIL: VOIDEX process not alive after 25 seconds'; exit 1; fi
             echo 'PASS: VOIDEX process alive after 25 seconds (emulator only)'
       - name: Save startup diagnostic logs
         if: always()
